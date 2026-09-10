@@ -1,0 +1,63 @@
+- name: Go CI
+  # You may pin to the exact commit or the version.
+  # uses: pipery-dev/golang-ci@fd0374debcf0f9e2f90bb03797645c17f5499920
+  uses: pipery-dev/golang-ci@v1
+  with:
+    # Path to the project source tree the action should operate on.
+    project_path: # optional, default is .
+    # Path to Pipery config file.
+    config_file: # optional, default is .pipery/config.yaml
+    # Go version to use.
+    go_version: # optional, default is 1.22
+    # Skip SAST step.
+    skip_sast: # optional, default is false
+    # Skip SCA step.
+    skip_sca: # optional, default is false
+    # Skip lint step.
+    skip_lint: # optional, default is false
+    # Skip build step.
+    skip_build: # optional, default is false
+    # Go package path for tests (e.g. ./pkg/...). Defaults to ./...
+    tests_path: # optional, default is ./...
+    # Comma or whitespace separated GOOS/GOARCH targets for cross-platform compilation, e.g. linux/amd64,darwin/arm64,windows/amd64. Empty builds the host platform.
+    target_platforms: # optional, default is 
+    # Skip test step.
+    skip_test: # optional, default is false
+    # Skip versioning step.
+    skip_versioning: # optional, default is false
+    # Skip packaging step.
+    skip_packaging: # optional, default is false
+    # Skip release step.
+    skip_release: # optional, default is false
+    # Skip reintegration step.
+    skip_reintegration: # optional, default is false
+    # Version bump type: patch, minor, or major.
+    version_bump: # optional, default is patch
+    # GitHub token for release and reintegration steps.
+    github_token: # optional, default is 
+    # Path to the JSONL log file written during the run.
+    log_file: # optional, default is pipery.jsonl
+    # Container registry for packaging.
+    registry: # optional, default is ghcr.io
+    # Container image name.
+    image_name: # optional, default is 
+    # Build and push a Docker image for the application.
+    release_docker_image: # optional, default is false
+    # Docker registry host used for login and image prefix.
+    docker_registry: # optional, default is ghcr.io
+    # Docker image name without tag. Defaults to image_name, then the GitHub repository.
+    docker_image: # optional, default is 
+    # Comma, space, or newline separated Docker tags. Defaults to sha-<short sha>.
+    docker_tags: # optional, default is 
+    # Docker build context, relative to project_path unless absolute.
+    docker_context: # optional, default is .
+    # Dockerfile path, relative to project_path unless absolute.
+    dockerfile: # optional, default is Dockerfile
+    # Comma separated Docker target platforms for buildx, e.g. linux/amd64,linux/arm64. Empty uses a regular Docker build for the runner platform.
+    docker_platforms: # optional, default is 
+    # Docker registry username. For ghcr.io this is usually the GitHub actor.
+    docker_username: # optional, default is 
+    # Docker registry password or token.
+    docker_password: # optional, default is 
+    # Also tag and push latest.
+    docker_push_latest: # optional, default is false
