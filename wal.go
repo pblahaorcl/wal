@@ -1,9 +1,9 @@
 // Package wal provides a small, durable write-ahead log.
 //
 // A Log stores records in append order. Each record has a monotonically
-// increasing sequence number and a CRC-32 checksum. By default Append syncs
-// the file before returning, so a successful append is durable according to
-// the operating system's fsync semantics.
+// increasing sequence number and a CRC-32 checksum. By default Append and
+// AppendBatch sync the file before returning, so a successful append is
+// durable according to the operating system's fsync semantics.
 package wal
 
 import (
@@ -46,9 +46,9 @@ type options struct {
 // Option configures a Log opened by Open.
 type Option func(*options)
 
-// WithSyncOnWrite controls whether Append calls File.Sync before returning.
-// It defaults to true. Set it to false when batching writes; call Sync before
-// depending on those writes for crash durability.
+// WithSyncOnWrite controls whether Append and AppendBatch call File.Sync before
+// returning. It defaults to true. Set it to false when managing durability
+// explicitly; call Sync before depending on those writes for crash durability.
 func WithSyncOnWrite(enabled bool) Option {
 	return func(o *options) { o.syncOnWrite = enabled }
 }
@@ -124,40 +124,80 @@ func (l *Log) Append(data []byte) (uint64, error) {
 	l.mu.Lock()
 	defer l.mu.Unlock()
 
+	sequence, err := l.appendBatchLocked([][]byte{data})
+	return sequence, err
+}
+
+// AppendBatch adds each payload to the log and returns the assigned sequence
+// numbers in the same order as data. The payloads are copied before returning,
+// so the caller may safely reuse its input buffers. When sync-on-write is
+// enabled, all records are written first and then made durable with one sync.
+// An empty batch is a no-op.
+func (l *Log) AppendBatch(data [][]byte) ([]uint64, error) {
+	l.mu.Lock()
+	defer l.mu.Unlock()
+
+	firstSequence, err := l.appendBatchLocked(data)
+	if err != nil {
+		return nil, err
+	}
+
+	sequences := make([]uint64, len(data))
+	for i := range sequences {
+		sequences[i] = firstSequence + uint64(i)
+	}
+	return sequences, nil
+}
+
+func (l *Log) appendBatchLocked(data [][]byte) (uint64, error) {
 	if err := l.ensureOpen(); err != nil {
 		return 0, err
 	}
-	if len(data) > l.opts.maxRecord {
-		return 0, fmt.Errorf("wal: record size %d exceeds maximum %d", len(data), l.opts.maxRecord)
+	if len(data) == 0 {
+		return l.nextSeq, nil
 	}
 	if l.nextSeq == 0 {
 		return 0, errors.New("wal: sequence number exhausted")
 	}
-
-	sequence := l.nextSeq
-	record := makeRecord(sequence, data)
-	writeOffset := l.offset
-	if err := writeAtFull(l.file, record, writeOffset); err != nil {
-		// A short or failed write may have left a partial record at the tail.
-		// Remove it so a later append cannot leave stale bytes after its record.
-		if truncateErr := l.file.Truncate(int64(writeOffset)); truncateErr != nil {
-			return 0, fmt.Errorf("wal: write record: %w (truncate partial record: %v)", err, truncateErr)
-		}
-		return 0, err
+	availableSequences := ^uint64(0) - l.nextSeq + 1
+	if uint64(len(data)) > availableSequences {
+		return 0, errors.New("wal: sequence number exhausted")
 	}
+	for _, payload := range data {
+		if len(payload) > l.opts.maxRecord {
+			return 0, fmt.Errorf("wal: record size %d exceeds maximum %d", len(payload), l.opts.maxRecord)
+		}
+	}
+
+	firstSequence := l.nextSeq
+	writeOffset := l.offset
+	metas := make([]recordMeta, len(data))
+	for i, payload := range data {
+		sequence := firstSequence + uint64(i)
+		record := makeRecord(sequence, payload)
+		if err := writeAtFull(l.file, record, writeOffset); err != nil {
+			if truncateErr := l.file.Truncate(int64(l.offset)); truncateErr != nil {
+				return 0, fmt.Errorf("wal: write record: %w (truncate partial batch: %v)", err, truncateErr)
+			}
+			return 0, err
+		}
+		metas[i] = recordMeta{offset: writeOffset, length: uint32(len(payload))}
+		writeOffset += uint64(len(record))
+	}
+
 	if l.opts.syncOnWrite {
 		if err := l.file.Sync(); err != nil {
-			if truncateErr := l.file.Truncate(int64(writeOffset)); truncateErr != nil {
-				return 0, fmt.Errorf("wal: sync record: %w (truncate unsynced record: %v)", err, truncateErr)
+			if truncateErr := l.file.Truncate(int64(l.offset)); truncateErr != nil {
+				return 0, fmt.Errorf("wal: sync batch: %w (truncate unsynced batch: %v)", err, truncateErr)
 			}
 			return 0, err
 		}
 	}
 
-	l.records = append(l.records, recordMeta{offset: writeOffset, length: uint32(len(data))})
-	l.offset += uint64(len(record))
-	l.nextSeq++
-	return sequence, nil
+	l.records = append(l.records, metas...)
+	l.offset = writeOffset
+	l.nextSeq = firstSequence + uint64(len(data))
+	return firstSequence, nil
 }
 
 // Read returns the entry with sequence. Sequences start at one.

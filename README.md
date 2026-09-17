@@ -22,6 +22,16 @@ if err != nil {
 fmt.Println(string(entry.Data))
 ```
 
+For several records, `AppendBatch` returns their sequence numbers and performs
+one sync at the durability boundary:
+
+```go
+sequences, err := log.AppendBatch([][]byte{
+    []byte("item-added: 1"),
+    []byte("item-added: 2"),
+})
+```
+
 Call `Replay` after opening to rebuild application state:
 
 ```go
@@ -30,10 +40,10 @@ err := log.Replay(func(entry wal.Entry) error {
 })
 ```
 
-`Append` syncs before returning by default. For batched writes, open with
-`wal.WithSyncOnWrite(false)` and call `Sync` at the desired durability
-boundary. A truncated final record is discarded on open; a checksum failure in
-a complete record returns `wal.ErrCorrupt`.
+`Append` and `AppendBatch` sync before returning by default. For explicitly
+managed batching, open with `wal.WithSyncOnWrite(false)` and call `Sync` at the
+desired durability boundary. A truncated final record is discarded on open; a
+checksum failure in a complete record returns `wal.ErrCorrupt`.
 
 Run the example and tests with:
 
