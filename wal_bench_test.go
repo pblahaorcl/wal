@@ -16,8 +16,17 @@ func BenchmarkAppend(b *testing.B) {
 	benchmarkAppend(b, false)
 }
 
+
 func BenchmarkAppendSync(b *testing.B) {
 	benchmarkAppend(b, true)
+}
+
+func BenchmarkAppendBatch(b *testing.B) {
+	benchmarkAppendBatch(b, false)
+}
+
+func BenchmarkAppendBatchSync(b *testing.B) {
+	benchmarkAppendBatch(b, true)
 }
 
 func benchmarkAppend(b *testing.B, syncOnWrite bool) {
@@ -46,6 +55,41 @@ func benchmarkAppend(b *testing.B, syncOnWrite bool) {
 			b.Fatal(err)
 		}
 		benchmarkSequence = sequence
+	}
+}
+
+func benchmarkAppendBatch(b *testing.B, syncOnWrite bool) {
+	b.Helper()
+
+	const batchSize = 32
+	data := bytes.Repeat([]byte("x"), 256)
+	batch := make([][]byte, batchSize)
+	for i := range batch {
+		batch[i] = data
+	}
+
+	log, err := Open(
+		filepath.Join(b.TempDir(), "append-batch.wal"),
+		WithSyncOnWrite(syncOnWrite),
+	)
+	if err != nil {
+		b.Fatal(err)
+	}
+	b.Cleanup(func() {
+		if err := log.Close(); err != nil {
+			b.Error(err)
+		}
+	})
+
+	b.SetBytes(int64(len(data) * batchSize))
+	b.ReportAllocs()
+	b.ResetTimer()
+	for i := 0; i < b.N; i++ {
+		sequences, err := log.AppendBatch(batch)
+		if err != nil {
+			b.Fatal(err)
+		}
+		benchmarkSequence = sequences[len(sequences)-1]
 	}
 }
 

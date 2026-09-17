@@ -71,6 +71,85 @@ func TestAppendReadReplayAndReopen(t *testing.T) {
 	}
 }
 
+func TestAppendBatch(t *testing.T) {
+	path := filepath.Join(t.TempDir(), "journal.wal")
+	log, err := Open(path)
+	if err != nil {
+		t.Fatal(err)
+	}
+
+	data := [][]byte{[]byte("one"), nil, []byte("three")}
+	sequences, err := log.AppendBatch(data)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if want := []uint64{1, 2, 3}; !reflect.DeepEqual(sequences, want) {
+		t.Fatalf("sequences = %v; want %v", sequences, want)
+	}
+
+	data[0][0] = 'X'
+	data[2] = []byte("changed")
+	for sequence, want := range map[uint64]string{1: "one", 2: "", 3: "three"} {
+		entry, err := log.Read(sequence)
+		if err != nil {
+			t.Fatal(err)
+		}
+		if string(entry.Data) != want {
+			t.Fatalf("Read(%d) = %q; want %q", sequence, entry.Data, want)
+		}
+	}
+
+	empty, err := log.AppendBatch(nil)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if len(empty) != 0 {
+		t.Fatalf("empty batch sequences = %v; want no sequences", empty)
+	}
+
+	if err := log.Close(); err != nil {
+		t.Fatal(err)
+	}
+	log, err = Open(path)
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer log.Close()
+	sequence, err := log.AppendBatch([][]byte{[]byte("four"), []byte("five")})
+	if err != nil {
+		t.Fatal(err)
+	}
+	if want := []uint64{4, 5}; !reflect.DeepEqual(sequence, want) {
+		t.Fatalf("sequences after reopen = %v; want %v", sequence, want)
+	}
+}
+
+func TestAppendBatchValidatesBeforeWriting(t *testing.T) {
+	path := filepath.Join(t.TempDir(), "journal.wal")
+	log, err := Open(path, WithMaxRecordSize(3), WithSyncOnWrite(false))
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer log.Close()
+
+	if _, err := log.Append([]byte("ok")); err != nil {
+		t.Fatal(err)
+	}
+	if _, err := log.AppendBatch([][]byte{[]byte("yes"), []byte("long")}); err == nil {
+		t.Fatal("AppendBatch accepted a record larger than the configured maximum")
+	}
+	if _, err := log.Read(2); !errors.Is(err, ErrNotFound) {
+		t.Fatalf("Read(2) after rejected batch = %v; want ErrNotFound", err)
+	}
+	sequence, err := log.Append([]byte("two"))
+	if err != nil {
+		t.Fatal(err)
+	}
+	if sequence != 2 {
+		t.Fatalf("sequence after rejected batch = %d; want 2", sequence)
+	}
+}
+
 func TestOpenRecoversIncompleteTail(t *testing.T) {
 	path := filepath.Join(t.TempDir(), "journal.wal")
 	log, err := Open(path)
@@ -186,6 +265,9 @@ func TestOptionsAndClosedLog(t *testing.T) {
 	}
 	if _, err := log.Append([]byte("no")); !errors.Is(err, ErrClosed) {
 		t.Fatalf("Append after Close() = %v; want ErrClosed", err)
+	}
+	if _, err := log.AppendBatch([][]byte{[]byte("no")}); !errors.Is(err, ErrClosed) {
+		t.Fatalf("AppendBatch after Close() = %v; want ErrClosed", err)
 	}
 	if err := log.Sync(); !errors.Is(err, ErrClosed) {
 		t.Fatalf("Sync after Close() = %v; want ErrClosed", err)

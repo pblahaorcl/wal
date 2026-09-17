@@ -4,7 +4,7 @@
 
 - Add log segmentation and retention/compaction so the WAL does not grow
   without bound and startup does not need to scan one ever-growing file.
-- Add an append-batch API that writes several records and performs one sync at
+- (DONE) Add an append-batch API that writes several records and performs one sync at
   the durability boundary.
 - Define and enforce the multi-process behavior. Either add an advisory file
   lock or document clearly that a path may only be opened by one process.
