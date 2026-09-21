@@ -2,11 +2,13 @@ GO ?= go
 BIN_DIR ?= bin
 BINARY ?= $(BIN_DIR)/wal-example
 INSPECT_BINARY ?= $(BIN_DIR)/wal-inspect
+COVERAGE_FILE ?= coverage.out
 
 .PHONY: test bench run inspect build build-inspect
 
 test:
-	$(GO) test ./...
+	$(GO) test -coverprofile=$(COVERAGE_FILE) ./...
+	$(GO) tool cover -func=$(COVERAGE_FILE)
 
 bench:
 	$(GO) test -run '^$$' -bench . -benchmem ./...
