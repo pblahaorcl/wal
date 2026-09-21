@@ -88,21 +88,9 @@ type Log struct {
 // opening. An incomplete final record is treated as a torn write and removed;
 // corruption in a complete record is returned as ErrCorrupt.
 func Open(path string, optionFns ...Option) (*Log, error) {
-	opts := options{
-		syncOnWrite: true,
-		fileMode:    0600,
-		maxRecord:   defaultMaxRecord,
-	}
-	for _, optionFn := range optionFns {
-		if optionFn != nil {
-			optionFn(&opts)
-		}
-	}
-	if opts.maxRecord <= 0 {
-		return nil, fmt.Errorf("wal: max record size must be positive: %d", opts.maxRecord)
-	}
-	if uint64(opts.maxRecord) > uint64(^uint32(0)) {
-		return nil, fmt.Errorf("wal: max record size exceeds on-disk limit: %d", opts.maxRecord)
+	opts, err := resolveOptions(optionFns)
+	if err != nil {
+		return nil, err
 	}
 
 	f, err := os.OpenFile(path, os.O_RDWR|os.O_CREATE, opts.fileMode)
@@ -116,6 +104,26 @@ func Open(path string, optionFns ...Option) (*Log, error) {
 		return nil, err
 	}
 	return l, nil
+}
+
+func resolveOptions(optionFns []Option) (options, error) {
+	opts := options{
+		syncOnWrite: true,
+		fileMode:    0600,
+		maxRecord:   defaultMaxRecord,
+	}
+	for _, optionFn := range optionFns {
+		if optionFn != nil {
+			optionFn(&opts)
+		}
+	}
+	if opts.maxRecord <= 0 {
+		return options{}, fmt.Errorf("wal: max record size must be positive: %d", opts.maxRecord)
+	}
+	if uint64(opts.maxRecord) > uint64(^uint32(0)) {
+		return options{}, fmt.Errorf("wal: max record size exceeds on-disk limit: %d", opts.maxRecord)
+	}
+	return opts, nil
 }
 
 // Append adds data to the log and returns its sequence number. Append copies
