@@ -51,3 +51,15 @@ Run the example and tests with:
 go run ./examples/basic
 go test ./...
 ```
+
+Inspect a log without opening it for append or repairing a truncated tail:
+
+```text
+go run ./cmd/wal-inspect events.wal
+```
+
+The inspection report includes record and byte counts, the sequence range, and
+the first truncated-tail or corruption issue. A committed-record corruption
+is printed and returns a non-zero exit status. Interactive terminals get color
+and byte-usage bars; use `-color=never` or `-color=always` to override color
+detection.
